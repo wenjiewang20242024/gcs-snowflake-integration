@@ -23,6 +23,10 @@ jobs:
       with:
         project_id: ${{ secrets.GCP_PROJECT_ID }}
 
+    - name: Sync files with GCS
+      run: |
+        gsutil -m rsync -r ./customer gs://mydata_upload_bucket/customer/
+
     - name: Deploy Google Cloud Function
       run: |
         gcloud functions deploy load-data-to-snowflake-function \
@@ -38,3 +42,7 @@ jobs:
     - name: Verify Deployment
       run: |
         gcloud functions describe load-data-to-snowflake-function --region us-central1
+
+    - name: Check Function Logs
+      run: |
+        gcloud functions logs read load-data-to-snowflake-function --region us-central1 --limit 10

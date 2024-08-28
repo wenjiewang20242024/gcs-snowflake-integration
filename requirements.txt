@@ -1,0 +1,3 @@
+google-cloud-storage
+snowflake-connector-python
+PyYAML

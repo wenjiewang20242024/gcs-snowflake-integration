@@ -1,3 +1,0 @@
-functions-framework==3.0.0
-snowflake-connector-python==3.0.4
-google-cloud-storage==2.5.0

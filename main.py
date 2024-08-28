@@ -4,21 +4,21 @@ import snowflake.connector
 from google.cloud import storage
 import os
 
-# This function triggers when a file is uploaded to the specified Cloud Storage bucket
+# Define the function to be triggered by Cloud Storage
 @functions_framework.cloud_event
-def load_data_to_snowflake(event):
+def load_data_to_snowflake(cloud_event):
     try:
-        # Get the bucket and file name from the event
-        bucket_name = event.data["bucket"]
-        file_name = event.data["name"]
-        
+        # Extract the bucket name and file name from the event
+        bucket_name = cloud_event.data['bucket']
+        file_name = cloud_event.data['name']
+
         # Initialize GCS client and download the file
         storage_client = storage.Client()
-        bucket = storage_client.bucket(bucket_name)
+        bucket = storage_client.get_bucket(bucket_name)
         blob = bucket.blob(file_name)
         yaml_content = blob.download_as_string()
 
-        # Parse the YAML file (assuming the uploaded file is YAML)
+        # Parse the YAML file
         yaml_data = yaml.safe_load(yaml_content)
 
         # Connect to Snowflake
@@ -33,11 +33,10 @@ def load_data_to_snowflake(event):
 
         cursor = conn.cursor()
 
-        # Automatically detect changes and update the table
+        # Load data into Snowflake
         for key, value in yaml_data.items():
-            # Upsert data into Snowflake table
             cursor.execute(f"""
-                MERGE INTO your_table_name t
+                MERGE INTO {value['raw_table_name']} t
                 USING (SELECT '{key}' AS key, '{value}' AS value) s
                 ON t.key = s.key
                 WHEN MATCHED THEN
@@ -50,7 +49,8 @@ def load_data_to_snowflake(event):
         cursor.close()
         conn.close()
 
-        print(f"Processed file {file_name} from bucket {bucket_name} successfully.")
-    
+        print(f"Successfully loaded data from {file_name} into Snowflake")
+
     except Exception as e:
-        print(f"Error processing file {file_name}: {str(e)}")
+        print(f"Error loading data: {str(e)}")
+        raise e

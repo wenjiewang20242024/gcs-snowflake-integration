@@ -1,4 +1,4 @@
-name: Deploy and Trigger load_data_to_snowflake Function
+name: Trigger load_data_to_snowflake Function
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  deploy:
+  trigger:
     runs-on: ubuntu-latest
 
     steps:
@@ -21,23 +21,10 @@ jobs:
     - name: Set up Google Cloud SDK
       uses: google-github-actions/setup-gcloud@v1
       with:
-        project_id: hopeful-host-433910-d8
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
         install_components: 'gsutil'
 
-    # Deploy load_data_to_snowflake function
-    - name: Deploy load_data_to_snowflake Function
+    # Trigger the load_data_to_snowflake function
+    - name: Trigger load_data_to_snowflake Function
       run: |
-        gcloud functions deploy load-data-to-snowflake-function \
-          --runtime python311 \
-          --trigger-http \
-          --allow-unauthenticated \
-          --entry-point load_data_to_snowflake \
-          --project hopeful-host-433910-d8 \
-          --region us-central1 \
-          --service-account new-service@hopeful-host-433910-d8.iam.gserviceaccount.com \
-          --no-gen2
-
-    # Upload the Customer.yml file to the GCS bucket
-    - name: Sync files with GCS
-      run: |
-        gsutil -m rsync -r -d . gs://mydata_upload_bucket/
+        curl -X POST https://REGION-YOUR_PROJECT_ID.cloudfunctions.net/load-data-to-snowflake-function

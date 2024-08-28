@@ -4,10 +4,10 @@ has_header: 1
 key_columns: id
 record_delimiter: "\n"
 on_error: continue
-stg_schema_name: staging_schema
+stg_schema_name: MY_PROJECT_SCHEMA   # Use the same schema name as the environment variable
 stg_table_name: customer_staging_table
 raw_table_name: customer_raw_table
-raw_schema_name: raw_data_schema
+raw_schema_name: MY_PROJECT_SCHEMA   # Use the same schema name as the environment variable
 file_encoding: ISO-8859-1
 truncate_flag: false
 date_format: 'yyyy-MM-dd'

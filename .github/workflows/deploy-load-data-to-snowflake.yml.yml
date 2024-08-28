@@ -34,8 +34,8 @@ jobs:
           --entry-point load_data_to_snowflake \
           --project ${{ secrets.GCP_PROJECT_ID }} \
           --region us-central1 \
-          --service-account github-gcs-snowflake-sync@my-gcp-project-433206.iam.gserviceaccount.com \
           --no-gen2
+
 
     # Trigger load_data_to_snowflake function
     - name: Trigger load_data_to_snowflake Function

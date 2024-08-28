@@ -1,8 +1,9 @@
-name: GCS Deployment
+name: Deploy and Trigger load_data_to_snowflake Function
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
 
 jobs:
   deploy:
@@ -12,43 +13,31 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
-    - name: Set up gcloud CLI
-      uses: google-github-actions/setup-gcloud@v0
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v1
       with:
-        service_account_email: ${{ secrets.GCP_SA_EMAIL }}
-        service_account_key: ${{ secrets.GCP_SA_KEY }}
-        project_id: hopeful-host-433910-d8  # 这是你的 Google Cloud 项目ID
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-    - name: Get changed files
-      id: changed-files
-      uses: tj-actions/changed-files@v40
+    - name: Set up Google Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        project_id: hopeful-host-433910-d8
+        install_components: 'gsutil'
 
-    - name: Identify and Deploy via GCS
+    # Deploy load_data_to_snowflake function
+    - name: Deploy load_data_to_snowflake Function
       run: |
-        # Identify changed files
-        CHANGED_FILES="${{ steps.changed-files.outputs.all_changed_files }}"
+        gcloud functions deploy load-data-to-snowflake-function \
+          --runtime python311 \
+          --trigger-http \
+          --allow-unauthenticated \
+          --entry-point load_data_to_snowflake \
+          --project hopeful-host-433910-d8 \
+          --region us-central1 \
+          --service-account new-service@hopeful-host-433910-d8.iam.gserviceaccount.com \
+          --no-gen2
 
-        # Loop through changed files
-        IFS=$'\n'
-        for file in $CHANGED_FILES; do
-          echo "Processing file: $file"
-
-          # Extract file name with path
-          file_path=$(dirname "$file")
-          file_name=$(basename "$file")
-          echo "Extracted file path: $file_path"
-          echo "Extracted file name: $file_name"
-
-          # Check if the file already exists in GCS bucket
-          if gsutil -q stat "gs://mydata_upload_bucket/$file_path/$file_name"; then
-            echo "File exists in GCS bucket. Deleting..."
-            gsutil -q rm "gs://mydata_upload_bucket/$file_path/$file_name" || echo "Failed to delete file."
-            echo "File deleted successfully."
-          else
-            echo "File does not exist in GCS bucket."
-          fi
-
-          # Copy the file to GCS bucket with full path
-          gsutil -q cp "$file" "gs://mydata_upload_bucket/$file_path/$file_name"
-          echo "File copied to GCS bucket."
-        done
+    # Upload the Customer.yml file to the GCS bucket
+    - name: Sync files with GCS
+      run: |
+        gsutil -m rsync -r -d . gs://mydata_upload_bucket/

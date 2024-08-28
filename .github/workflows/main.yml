@@ -27,7 +27,8 @@ jobs:
       run: |
         gcloud functions deploy load-data-to-snowflake-function \
           --runtime python311 \
-          --trigger-http \
+          --trigger-resource mydata_upload_bucket \
+          --trigger-event google.storage.object.finalize \
           --allow-unauthenticated \
           --entry-point load_data_to_snowflake \
           --region us-central1 \

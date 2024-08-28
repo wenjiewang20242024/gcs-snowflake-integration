@@ -1,0 +1,54 @@
+name: GCS Deployment
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up gcloud CLI
+      uses: google-github-actions/setup-gcloud@v0
+      with:
+        service_account_email: ${{ secrets.GCP_SA_EMAIL }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        project_id: hopeful-host-433910-d8  # 这是你的 Google Cloud 项目ID
+
+    - name: Get changed files
+      id: changed-files
+      uses: tj-actions/changed-files@v40
+
+    - name: Identify and Deploy via GCS
+      run: |
+        # Identify changed files
+        CHANGED_FILES="${{ steps.changed-files.outputs.all_changed_files }}"
+
+        # Loop through changed files
+        IFS=$'\n'
+        for file in $CHANGED_FILES; do
+          echo "Processing file: $file"
+
+          # Extract file name with path
+          file_path=$(dirname "$file")
+          file_name=$(basename "$file")
+          echo "Extracted file path: $file_path"
+          echo "Extracted file name: $file_name"
+
+          # Check if the file already exists in GCS bucket
+          if gsutil -q stat "gs://mydata_upload_bucket/$file_path/$file_name"; then
+            echo "File exists in GCS bucket. Deleting..."
+            gsutil -q rm "gs://mydata_upload_bucket/$file_path/$file_name" || echo "Failed to delete file."
+            echo "File deleted successfully."
+          else
+            echo "File does not exist in GCS bucket."
+          fi
+
+          # Copy the file to GCS bucket with full path
+          gsutil -q cp "$file" "gs://mydata_upload_bucket/$file_path/$file_name"
+          echo "File copied to GCS bucket."
+        done

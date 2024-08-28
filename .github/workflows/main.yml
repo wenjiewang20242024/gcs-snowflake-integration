@@ -36,8 +36,10 @@ jobs:
           --allow-unauthenticated \
           --entry-point load_data_to_snowflake \
           --region us-central1 \
+          --memory 512MB \
           --project ${{ secrets.GCP_PROJECT_ID }} \
           --service-account new-service@hopeful-host-433910-d8.iam.gserviceaccount.com
+
 
     - name: Verify Deployment
       run: |

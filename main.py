@@ -4,53 +4,59 @@ import snowflake.connector
 from google.cloud import storage
 import os
 
-# Define the function to be triggered by Cloud Storage
 @functions_framework.cloud_event
 def load_data_to_snowflake(cloud_event):
-    try:
-        # Extract the bucket name and file name from the event
-        bucket_name = cloud_event.data['bucket']
-        file_name = cloud_event.data['name']
+    # Connect to Snowflake
+    conn = snowflake.connector.connect(
+        user=os.getenv('SNOWFLAKE_USER'),
+        password=os.getenv('SNOWFLAKE_PASSWORD'),
+        account=os.getenv('SNOWFLAKE_ACCOUNT'),
+        warehouse=os.getenv('SNOWFLAKE_WAREHOUSE'),
+        database=os.getenv('SNOWFLAKE_DATABASE'),
+        schema=os.getenv('SNOWFLAKE_SCHEMA')
+    )
+    cursor = conn.cursor()
 
-        # Initialize GCS client and download the file
-        storage_client = storage.Client()
-        bucket = storage_client.get_bucket(bucket_name)
-        blob = bucket.blob(file_name)
-        yaml_content = blob.download_as_string()
+    # Extract the GCS bucket and file name from the Cloud Event
+    bucket_name = cloud_event.data["bucket"]
+    file_name = cloud_event.data["name"]
 
-        # Parse the YAML file
-        yaml_data = yaml.safe_load(yaml_content)
+    # Download the file from GCS
+    storage_client = storage.Client()
+    bucket = storage_client.get_bucket(bucket_name)
+    blob = bucket.blob(file_name)
+    file_content = blob.download_as_string().decode('utf-8')
 
-        # Connect to Snowflake
-        conn = snowflake.connector.connect(
-            user=os.getenv('SNOWFLAKE_USER'),
-            password=os.getenv('SNOWFLAKE_PASSWORD'),
-            account=os.getenv('SNOWFLAKE_ACCOUNT'),
-            warehouse=os.getenv('SNOWFLAKE_WAREHOUSE'),
-            database=os.getenv('SNOWFLAKE_DATABASE'),
-            schema=os.getenv('SNOWFLAKE_SCHEMA')
-        )
+    # Load YAML configuration file
+    yaml_data = yaml.safe_load(file_content)
 
-        cursor = conn.cursor()
+    table_name = yaml_data.get("raw_table_name", "CUSTOMER_TABLE")
 
-        # Load data into Snowflake
-        for key, value in yaml_data.items():
-            cursor.execute(f"""
-                MERGE INTO {value['raw_table_name']} t
-                USING (SELECT '{key}' AS key, '{value}' AS value) s
-                ON t.key = s.key
-                WHEN MATCHED THEN
-                    UPDATE SET t.value = s.value
-                WHEN NOT MATCHED THEN
-                    INSERT (key, value) VALUES (s.key, s.value)
-            """)
+    # Create the table if it doesn't exist
+    create_table_query = f"""
+    CREATE TABLE IF NOT EXISTS {table_name} (
+        ID INTEGER,
+        NAME STRING,
+        AGE INTEGER,
+        EMAIL STRING,
+        JOIN_DATE DATE
+    );
+    """
+    cursor.execute(create_table_query)
+    print(f"Table {table_name} created or already exists.")
 
-        conn.commit()
-        cursor.close()
-        conn.close()
+    # Construct the COPY INTO query
+    copy_into_query = f"""
+    COPY INTO {table_name}
+    FROM @my_stage/{file_name}
+    FILE_FORMAT = (TYPE = 'CSV' FIELD_OPTIONALLY_ENCLOSED_BY = '"')
+    ON_ERROR = CONTINUE;
+    """
+    
+    # Execute the query to load data into Snowflake
+    cursor.execute(copy_into_query)
+    print(f"Data loaded into {table_name} successfully.")
 
-        print(f"Successfully loaded data from {file_name} into Snowflake")
-
-    except Exception as e:
-        print(f"Error loading data: {str(e)}")
-        raise e
+    conn.commit()
+    cursor.close()
+    conn.close()

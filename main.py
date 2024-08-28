@@ -17,6 +17,9 @@ def load_data_to_snowflake(cloud_event):
     )
     cursor = conn.cursor()
 
+    # Use the schema defined in the environment variable
+    cursor.execute(f"USE SCHEMA {os.getenv('SNOWFLAKE_SCHEMA')};")
+
     # Extract the GCS bucket and file name from the Cloud Event
     bucket_name = cloud_event.data["bucket"]
     file_name = cloud_event.data["name"]

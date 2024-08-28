@@ -6,7 +6,7 @@ import os
 
 @functions_framework.cloud_event
 def load_data_to_snowflake(cloud_event):
-    # 连接到 Snowflake
+    # Connect to Snowflake
     conn = snowflake.connector.connect(
         user=os.getenv('SNOWFLAKE_USER'),
         password=os.getenv('SNOWFLAKE_PASSWORD'),
@@ -17,32 +17,36 @@ def load_data_to_snowflake(cloud_event):
     )
     cursor = conn.cursor()
 
-    # 使用环境变量中定义的 schema
+    # Use the schema defined in the environment variable
     cursor.execute(f"USE SCHEMA {os.getenv('SNOWFLAKE_SCHEMA')};")
 
-    # 从 Cloud Event 中提取 GCS bucket 和文件名
+    # Extract the GCS bucket and file name from the Cloud Event
     bucket_name = cloud_event.data["bucket"]
     file_name = cloud_event.data["name"]
 
-    # 从 GCS 下载文件
+    # Download the file from GCS
     storage_client = storage.Client()
     bucket = storage_client.get_bucket(bucket_name)
     blob = bucket.blob(file_name)
     file_content = blob.download_as_string().decode('utf-8')
 
-    # 调试输出，检查文件内容
-    print("File content:", file_content)
+    print(f"File content: {file_content}")
 
-    # 加载 YAML 配置文件
-    yaml_data = yaml.safe_load(file_content)
+    # Load YAML configuration file
+    try:
+        yaml_data = yaml.safe_load(file_content)
+        print(f"YAML data: {yaml_data}")
+    except yaml.YAMLError as exc:
+        print(f"Error parsing YAML: {exc}")
+        raise
 
-    # 调试输出，检查解析后的 YAML 数据
-    print("YAML data:", yaml_data)
+    if not isinstance(yaml_data, dict):
+        print(f"YAML data is not a dictionary. Type: {type(yaml_data)}")
+        raise ValueError("YAML data should be a dictionary")
 
-    # 获取表名
     table_name = yaml_data.get("raw_table_name", "CUSTOMER_TABLE")
 
-    # 如果表不存在，则创建表
+    # Create the table if it doesn't exist
     create_table_query = f"""
     CREATE TABLE IF NOT EXISTS {table_name} (
         ID INTEGER,
@@ -55,7 +59,7 @@ def load_data_to_snowflake(cloud_event):
     cursor.execute(create_table_query)
     print(f"Table {table_name} created or already exists.")
 
-    # 构建 COPY INTO 查询语句
+    # Construct the COPY INTO query
     copy_into_query = f"""
     COPY INTO {table_name}
     FROM @my_stage/{file_name}
@@ -63,7 +67,7 @@ def load_data_to_snowflake(cloud_event):
     ON_ERROR = CONTINUE;
     """
     
-    # 执行查询，将数据加载到 Snowflake 中
+    # Execute the query to load data into Snowflake
     cursor.execute(copy_into_query)
     print(f"Data loaded into {table_name} successfully.")
 

@@ -1,4 +1,4 @@
-name: Deploy and Update Google Cloud Function
+name: Trigger load_data_to_snowflake Function
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  deploy:
+  trigger:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,20 +22,9 @@ jobs:
       uses: google-github-actions/setup-gcloud@v1
       with:
         project_id: ${{ secrets.GCP_PROJECT_ID }}
-        install_components: 'cloud-functions'
+        install_components: 'gsutil'
 
-    - name: Deploy Google Cloud Function
+    # Trigger the load_data_to_snowflake function
+    - name: Trigger load_data_to_snowflake Function
       run: |
-        gcloud functions deploy load-data-to-snowflake-function \
-          --runtime python311 \
-          --trigger-resource mydata_upload_bucket \
-          --trigger-event google.storage.object.finalize \
-          --allow-unauthenticated \
-          --entry-point load_data_to_snowflake \
-          --region us-central1 \
-          --project ${{ secrets.GCP_PROJECT_ID }} \
-          --source .
-
-    - name: Verify Deployment
-      run: |
-        gcloud functions describe load-data-to-snowflake-function --region us-central1
+        curl -X POST https://REGION-YOUR_PROJECT_ID.cloudfunctions.net/load-data-to-snowflake-function

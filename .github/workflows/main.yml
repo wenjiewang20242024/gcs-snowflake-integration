@@ -30,6 +30,7 @@ jobs:
     - name: Deploy Google Cloud Function
       run: |
         gcloud functions deploy load-data-to-snowflake-function \
+          --source ./Customer \
           --runtime python311 \
           --trigger-resource mydata_upload_bucket \
           --trigger-event google.storage.object.finalize \

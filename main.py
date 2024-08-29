@@ -3,8 +3,6 @@ import yaml
 import snowflake.connector
 from google.cloud import storage
 import os
-import csv
-import io
 
 @functions_framework.cloud_event
 def load_data_to_snowflake(cloud_event):
@@ -34,51 +32,36 @@ def load_data_to_snowflake(cloud_event):
 
     print(f"File content: {file_content}")
 
-    # Check if the file is YAML or CSV
-    if file_name.endswith('.yaml') or file_name.endswith('.yml'):
-        # Handle YAML file
-        try:
-            yaml_data = yaml.safe_load(file_content)
-            print(f"YAML data: {yaml_data}")
-        except yaml.YAMLError as exc:
-            print(f"Error parsing YAML: {exc}")
-            raise
+    # Load YAML configuration file
+    try:
+        yaml_data = yaml.safe_load(file_content)
+        print(f"YAML data: {yaml_data}")
+    except yaml.YAMLError as exc:
+        print(f"Error parsing YAML: {exc}")
+        raise
 
-        if not isinstance(yaml_data, dict):
-            print(f"YAML data is not a dictionary. Type: {type(yaml_data)}")
-            raise ValueError("YAML data should be a dictionary")
+    if not isinstance(yaml_data, dict):
+        print(f"YAML data is not a dictionary. Type: {type(yaml_data)}")
+        raise ValueError("YAML data should be a dictionary")
 
-        table_name = yaml_data.get("raw_table_name", "CUSTOMER_TABLE")
+    table_name = yaml_data.get("raw_table_name", "CUSTOMER_RAW_TABLE")
 
-        # Create the table if it doesn't exist
-        create_table_query = f"""
-        CREATE TABLE IF NOT EXISTS {table_name} (
-            ID INTEGER,
-            NAME STRING,
-            AGE INTEGER,
-            EMAIL STRING,
-            JOIN_DATE DATE
-        );
+    # Construct and execute the INSERT query
+    for line in file_content.strip().split('\n')[1:]:  # Skip header
+        columns = line.split(',')
+        insert_query = f"""
+        INSERT INTO {table_name} (ID, NAME, AGE, EMAIL, JOIN_DATE)
+        VALUES ({columns[0]}, '{columns[1]}', {columns[2]}, '{columns[3]}', '{columns[4]}');
         """
-        cursor.execute(create_table_query)
-        print(f"Table {table_name} created or already exists.")
-
-    elif file_name.endswith('.csv'):
-        # Handle CSV file
-        table_name = "CUSTOMER_TABLE"  # Or extract this from somewhere else
-        csv_reader = csv.reader(io.StringIO(file_content))
-        headers = next(csv_reader)  # Skip the header row
-        for row in csv_reader:
-            # Insert each row into the table
-            insert_query = f"""
-            INSERT INTO {table_name} ({', '.join(headers)})
-            VALUES ({', '.join([f"'{value}'" for value in row])});
-            """
+        try:
             cursor.execute(insert_query)
-        print(f"Data loaded into {table_name} successfully.")
-    else:
-        raise ValueError("Unsupported file format")
+            print(f"Inserted row: {columns}")
+        except Exception as e:
+            print(f"Error inserting row {columns}: {e}")
+            conn.rollback()
+            raise
 
     conn.commit()
     cursor.close()
     conn.close()
+    print(f"Data loaded into {table_name} successfully.")

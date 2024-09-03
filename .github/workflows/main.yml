@@ -26,21 +26,3 @@ jobs:
     - name: Sync files with GCS
       run: |
         gsutil -m rsync -r ./Loading_yaml gs://mydata_upload_bucket/
-
-
-    - name: Deploy Google Cloud Function
-      run: |
-        gcloud functions deploy load-data-to-snowflake-function \
-          --runtime python311 \
-          --trigger-resource mydata_upload_bucket \
-          --trigger-event google.storage.object.finalize \
-          --allow-unauthenticated \
-          --entry-point load_data_to_snowflake \
-          --region us-central1 \
-          --memory 512MB \
-          --project ${{ secrets.GCP_PROJECT_ID }} \
-          --service-account new-service@hopeful-host-433910-d8.iam.gserviceaccount.com
-
-    - name: Verify Deployment
-      run: |
-        gcloud functions describe load-data-to-snowflake-function --region us-central1

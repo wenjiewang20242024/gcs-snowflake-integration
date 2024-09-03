@@ -25,4 +25,5 @@ jobs:
 
     - name: Sync files with GCS
       run: |
-        gsutil -m rsync -r ./Loading_yaml gs://mydata_upload_bucket/
+        gsutil -m rsync -r -d ./Loading_yaml gs://mydata_upload_bucket/
+

@@ -3,7 +3,7 @@ file_pattern: customer%.csv
 has_header: 5
 key_columns: id
 record_delimiter: "\n"
-on_error: continue
+on_error: stop
 stg_schema_name: MY_PROJECT_SCHEMA
 stg_table_name: customer_staging_table
 raw_table_name: CUSTOMER_RAW_TABLE

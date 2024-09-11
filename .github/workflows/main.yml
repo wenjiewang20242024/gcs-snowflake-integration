@@ -27,3 +27,7 @@ jobs:
       run: |
         gsutil -m rsync -r -d ./Loading_yaml gs://mydata_upload_bucket/
 
+
+    - name: Sync files with actual-data-upload-bucket
+      run: |
+        gsutil -m rsync -r -d ./Process_yaml gs://actual-data-upload-bucket/

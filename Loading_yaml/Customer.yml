@@ -1,6 +1,6 @@
-file_id: 5
+file_id: 1
 file_pattern: customer%.csv
-has_header: 5
+has_header: 1
 key_columns: id
 record_delimiter: "\n"
 on_error: continue

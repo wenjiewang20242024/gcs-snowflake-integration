@@ -1,4 +1,3 @@
-'''
 import functions_framework
 import yaml
 import snowflake.connector
@@ -71,4 +70,3 @@ def load_data_to_snowflake(cloud_event):
     conn.commit()
     cursor.close()
     conn.close()
-'''

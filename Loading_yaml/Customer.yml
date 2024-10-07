@@ -9,7 +9,7 @@ stg_table_name: customer_staging_table
 raw_table_name: CUSTOMER_RAW_TABLE
 raw_schema_name: MY_PROJECT_SCHEMA
 file_encoding: ISO-8859-1
-truncate_flag: True
+truncate_flag: False
 date_format: 'yyyy-MM-dd'
 delimiter: ","
 empty_field_as_null: true

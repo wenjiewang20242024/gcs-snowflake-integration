@@ -1,6 +1,4 @@
-'''
 functions-framework
 snowflake-connector-python
 PyYAML
 google-cloud-storage
-'''

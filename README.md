@@ -1,1 +1,1 @@
-# GitHub CI/CD Pipeline with GCP and Snowflake Data Integration
+# Automated Workflow for GCP and Snowflake Data Integration

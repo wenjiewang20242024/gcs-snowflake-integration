@@ -1,0 +1,78 @@
+import functions_framework
+import yaml
+import snowflake.connector
+from google.cloud import storage
+import os
+
+@functions_framework.cloud_event
+def load_data_to_snowflake(cloud_event):
+    # Connect to Snowflake
+    conn = snowflake.connector.connect(
+        user=os.getenv('SNOWFLAKE_USER'),
+        password=os.getenv('SNOWFLAKE_PASSWORD'),
+        account=os.getenv('SNOWFLAKE_ACCOUNT'),
+        warehouse=os.getenv('SNOWFLAKE_WAREHOUSE'),
+        database=os.getenv('SNOWFLAKE_DATABASE'),
+        schema=os.getenv('SNOWFLAKE_SCHEMA')
+    )
+    cursor = conn.cursor()
+
+    # Create schema if it doesn't exist
+    schema_name = os.getenv('SNOWFLAKE_SCHEMA')
+    cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {schema_name};")
+    conn.commit()  # Ensure schema creation is committed
+    cursor.execute(f"USE SCHEMA {schema_name};")
+
+    # Extract GCS bucket and file name from Cloud Event
+    bucket_name = cloud_event.data["bucket"]
+    file_name = cloud_event.data["name"]
+
+    # Download the file from GCS
+    storage_client = storage.Client()
+    bucket = storage_client.get_bucket(bucket_name)
+    blob = bucket.blob(file_name)
+    file_content = blob.download_as_string().decode('utf-8')
+
+    # Debug output to check file content
+    print("File content:", file_content)
+
+    # Load YAML configuration file
+    yaml_data = yaml.safe_load(file_content)
+
+    # Debug output to check parsed YAML data
+    print("YAML data:", yaml_data)
+
+    # Get loading table name from environment variable or use a default name
+    loading_table_name = os.getenv('SNOWFLAKE_LOADING_TABLE_NAME', "LOADING_TABLE")
+
+    # Extract column names from YAML keys (based on your example)
+    columns = list(yaml_data.keys())
+
+    # Create the loading table if it doesn't exist dynamically from YAML columns
+    create_loading_table_query = f"""
+    CREATE TABLE IF NOT EXISTS {loading_table_name} (
+        {', '.join(f'{column} STRING' for column in columns)}
+    );
+    """
+    cursor.execute(create_loading_table_query)
+    print(f"Loading table {loading_table_name} created or already exists.")
+
+    # Insert values from the YAML data into the loading table
+    columns_str = ', '.join(columns)
+    values_str = ', '.join([f"'{value}'" for value in yaml_data.values()])
+
+    insert_query = f"""
+    INSERT INTO {loading_table_name} ({columns_str})
+    VALUES ({values_str});
+    """
+    cursor.execute(insert_query)
+    print(f"Data inserted into {loading_table_name} successfully.")
+
+    # Commit the transaction
+    conn.commit()
+
+    # Close the cursor and connection
+    cursor.close()
+    conn.close()
+
+    print("Snowflake transaction completed successfully.")

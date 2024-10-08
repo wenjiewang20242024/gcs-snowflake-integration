@@ -1,0 +1,176 @@
+import functions_framework
+import os
+import csv
+import snowflake.connector
+from google.cloud import storage
+from datetime import datetime
+
+# Helper function to create a unique batch ID
+def generate_batch_id():
+    return int(datetime.now().strftime("%Y%m%d%H%M%S"))
+
+@functions_framework.cloud_event
+def actual_data_uploaded(cloud_event):
+    # Specify the bucket name
+    bucket_name = "actual-data-upload-bucket"  # My GCS bucket name
+    file_name = cloud_event.data["name"]  # Extract the file name from the event
+    file_type = 'CSV'
+    
+    print(f"Processing file: {file_name} in bucket: {bucket_name}")
+
+    # Snowflake connection parameters (Hardcoded)
+    snowflake_connection_params = {
+        "user": "WENJIE",  # Snowflake username
+        "password": "20090320Abc@",  # Snowflake password
+        "account": "vd65916.us-central1.gcp",  # Snowflake account
+        "warehouse": "COMPUTE_WH",  # Snowflake warehouse
+        "database": "MY_PROJECT_DB",  # Snowflake database
+        "schema": "MY_PROJECT_SCHEMA",  # Snowflake schema
+    }
+
+    try:
+        # Initialize the Snowflake connection
+        connection = snowflake.connector.connect(
+            user=snowflake_connection_params['user'],
+            password=snowflake_connection_params['password'],
+            account=snowflake_connection_params['account'],
+            warehouse=snowflake_connection_params['warehouse'],
+            database=snowflake_connection_params['database'],
+            schema=snowflake_connection_params['schema']
+        )
+        cursor = connection.cursor()
+
+        # Check the control table for existing table information
+        loading_table_query = f"SELECT * FROM loading_table WHERE '{file_name}' ILIKE file_pattern"
+        cursor.execute(loading_table_query)
+        loading_table_info = cursor.fetchone()
+
+        # Add a check to handle if no matching record is found
+        if loading_table_info is None:
+            print(f"No matching record found in loading_table for file: {file_name}")
+            return
+
+        # Debug print statement to inspect the tuple
+        print(f"Fetched loading_table_info: {loading_table_info}")
+
+        # Ensure the tuple has the expected number of elements before accessing them
+        if len(loading_table_info) < 21:
+            print(f"Unexpected format in loading_table_info: {loading_table_info}")
+            return
+
+        # Generate a unique batch ID
+        batch_id = generate_batch_id()
+
+        # Extract loading table information
+        file_id = loading_table_info[0]
+        file_pattern = loading_table_info[1]
+        has_header = loading_table_info[2]
+        key_columns = loading_table_info[3]
+        record_delimiter = loading_table_info[4]
+        on_error = loading_table_info[5]
+        stg_schema_name = loading_table_info[6]
+        stg_table_name = loading_table_info[7]
+        raw_table_name = loading_table_info[8]
+        raw_schema_name = loading_table_info[9]
+        file_encoding = loading_table_info[10]
+        truncate_flag = loading_table_info[11]
+        date_format = loading_table_info[12]
+        delimiter = loading_table_info[13]
+        empty_field_as_null = loading_table_info[14]
+        error_on_column_count_mismatch = loading_table_info[15]
+        FIELD_OPTIONALLY_ENCLOSED_BY = loading_table_info[16]
+        file_extension = loading_table_info[17]  
+        purge_files_after_load = loading_table_info[18]
+        wh_name = loading_table_info[19]
+        time_format = loading_table_info[20]
+
+        # Download the CSV file from GCS
+        storage_client = storage.Client()
+        bucket = storage_client.get_bucket(bucket_name)
+        blob = bucket.blob(file_name)
+        csv_content = blob.download_as_text(encoding='utf-8')
+
+        # Parse the CSV file and extract the column names
+        csv_reader = csv.reader(csv_content.splitlines(), delimiter=delimiter)
+        columns = next(csv_reader) if has_header else [f"COL{i+1}" for i in range(len(next(csv_reader)))]
+
+        # Debug: Print the extracted column names
+        print(f"Extracted columns from CSV: {columns}")
+
+        # Dynamically create a Snowflake staging table if it doesn't exist (only once)
+        create_staging_table_query = f"""
+        CREATE TABLE IF NOT EXISTS {snowflake_connection_params['database']}.{stg_schema_name}.{stg_table_name} (
+            {', '.join([f'{col} STRING' for col in columns])},
+            BATCH_ID STRING,
+            FILE_NAME STRING
+        );
+        """
+        cursor.execute(create_staging_table_query)
+        print(f"Staging table {stg_table_name} created successfully in schema {stg_schema_name}.")
+
+        # Truncate the staging table before inserting new data
+        truncate_staging_table_query = f"TRUNCATE TABLE {snowflake_connection_params['database']}.{stg_schema_name}.{stg_table_name}"
+        cursor.execute(truncate_staging_table_query)
+        print(f"Staging table {stg_table_name} truncated successfully.")
+
+        # Dynamically create a Snowflake raw table if it doesn't exist (only once)
+        create_raw_table_query = f"""
+        CREATE TABLE IF NOT EXISTS {snowflake_connection_params['database']}.{raw_schema_name}.{raw_table_name} (
+            {', '.join([f'{col} STRING' for col in columns])},
+            BATCH_ID STRING,
+            FILE_NAME STRING
+        );
+        """
+        cursor.execute(create_raw_table_query)
+        print(f"Raw table {raw_table_name} created successfully in schema {raw_schema_name}.")
+
+        # Insert data into staging table
+        for row in csv_reader:
+            insert_staging_query = f"""
+            INSERT INTO {snowflake_connection_params['database']}.{stg_schema_name}.{stg_table_name}
+            (id, name, age, city, BATCH_ID, FILE_NAME)
+            VALUES (%s, %s, %s, %s, '{batch_id}', '{file_name}');
+            """
+            cursor.execute(insert_staging_query, row)
+        print(f"Data from {file_name} inserted into staging table {stg_table_name} successfully.")
+
+        # Now check the value of truncate_flag to decide how to handle the raw table
+        if truncate_flag == 'True':
+            # Truncate the raw table before inserting data
+            truncate_raw_table_query = f"TRUNCATE TABLE {snowflake_connection_params['database']}.{raw_schema_name}.{raw_table_name}"
+            cursor.execute(truncate_raw_table_query)
+            print(f"Raw table {raw_table_name} truncated successfully.")
+
+            # First, make sure you are selecting the correct columns explicitly, along with batch_id and file_name
+            insert_from_staging_query = f"""
+            INSERT INTO {snowflake_connection_params['database']}.{raw_schema_name}.{raw_table_name} 
+            ({', '.join(columns)}, BATCH_ID, FILE_NAME)
+            SELECT {', '.join(columns)}, '{batch_id}', '{file_name}' 
+            FROM {snowflake_connection_params['database']}.{stg_schema_name}.{stg_table_name};
+            """
+            cursor.execute(insert_from_staging_query)
+            print(f"Data from staging table {stg_table_name} inserted into raw table {raw_table_name} successfully.")
+
+        # If truncate_flag is False, use MERGE to merge data from staging table to raw table
+        else:
+            merge_query = f"""
+            MERGE INTO {snowflake_connection_params['database']}.{raw_schema_name}.{raw_table_name} AS target
+            USING (SELECT DISTINCT * FROM {snowflake_connection_params['database']}.{stg_schema_name}.{stg_table_name}) AS source
+            ON target.id = source.id AND target.name = source.name
+            WHEN MATCHED THEN UPDATE SET
+                {', '.join([f'target.{col} = source.{col}' for col in columns if col not in key_columns.split(',')])}
+            WHEN NOT MATCHED THEN
+                INSERT ({', '.join(columns)}, BATCH_ID, FILE_NAME)
+                VALUES ({', '.join([f'source.{col}' for col in columns])}, '{batch_id}', '{file_name}');
+            """
+            cursor.execute(merge_query)
+            print(f"Data from {stg_table_name} merged into {raw_table_name} successfully.")
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    
+    finally:
+        # Close cursor and connection
+        cursor.close()
+        connection.close()
+        print("Snowflake transaction completed successfully.")
